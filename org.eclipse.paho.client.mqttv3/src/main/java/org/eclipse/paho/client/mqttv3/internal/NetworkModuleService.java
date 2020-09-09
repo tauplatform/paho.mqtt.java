@@ -35,8 +35,11 @@ import org.eclipse.paho.client.mqttv3.spi.NetworkModuleFactory;
 public class NetworkModuleService {
 	private static Logger LOG = LoggerFactory.getLogger(LoggerFactory.MQTT_CLIENT_MSG_CAT,
 			NetworkModuleService.class.getSimpleName());
-	private static final ServiceLoader<NetworkModuleFactory> FACTORY_SERVICE_LOADER = ServiceLoader.load(
-			NetworkModuleFactory.class, NetworkModuleService.class.getClassLoader());
+	//private static final ServiceLoader<NetworkModuleFactory> FACTORY_SERVICE_LOADER = ServiceLoader.load(
+	//		NetworkModuleFactory.class, NetworkModuleService.class.getClassLoader());
+
+	private static TCPNetworkModuleFactory mTCPFactory = new TCPNetworkModuleFactory();
+	private static SSLNetworkModuleFactory mSSLFactory = new SSLNetworkModuleFactory();
 
 	/** Pattern to match URI authority parts: {@code authority = [userinfo"@"]host[":"port]} */
 	private static final Pattern AUTHORITY_PATTERN = Pattern.compile("((.+)@)?([^:]*)(:(\\d+))?");
@@ -63,14 +66,16 @@ public class NetworkModuleService {
 				throw new IllegalArgumentException("missing scheme in broker URI: " + brokerUri);
 			}
 			scheme = scheme.toLowerCase();
-			synchronized (FACTORY_SERVICE_LOADER) {
-				for (NetworkModuleFactory factory : FACTORY_SERVICE_LOADER) {
-					if (factory.getSupportedUriSchemes().contains(scheme)) {
-						factory.validateURI(uri);
-						return;
-					}
-				}
+
+			if (mTCPFactory.getSupportedUriSchemes().contains(scheme)) {
+				mTCPFactory.validateURI(uri);
+				return;
 			}
+			if (mSSLFactory.getSupportedUriSchemes().contains(scheme)) {
+				mSSLFactory.validateURI(uri);
+				return;
+			}
+
 			throw new IllegalArgumentException("no NetworkModule installed for scheme \"" + scheme
 					+ "\" of URI \"" + brokerUri + "\"");
 		} catch (URISyntaxException e) {
@@ -95,12 +100,12 @@ public class NetworkModuleService {
 			URI brokerUri = new URI(address);
 			applyRFC3986AuthorityPatch(brokerUri);
 			String scheme = brokerUri.getScheme().toLowerCase();
-			synchronized (FACTORY_SERVICE_LOADER) {
-				for (NetworkModuleFactory factory : FACTORY_SERVICE_LOADER) {
-					if (factory.getSupportedUriSchemes().contains(scheme)) {
-						return factory.createNetworkModule(brokerUri, options, clientId);
-					}
-				}
+
+			if (mTCPFactory.getSupportedUriSchemes().contains(scheme)) {
+				return mTCPFactory.createNetworkModule(brokerUri, options, clientId);
+			}
+			if (mSSLFactory.getSupportedUriSchemes().contains(scheme)) {
+				return mSSLFactory.createNetworkModule(brokerUri, options, clientId);
 			}
 			/*
 			 * To throw an IllegalArgumentException exception matches the previous behavior of
